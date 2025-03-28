@@ -1,0 +1,12 @@
+{
+  "Version": 1,
+  "Hash": "f71dT746ww/XD91gfdQTeVeyg4HUYXlI5TkUCSqdGEs=",
+  "Source": "JobManagementSystem.Api",
+  "BasePath": "_content/JobManagementSystem.Api",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": [],
+  "Endpoints": []
+}

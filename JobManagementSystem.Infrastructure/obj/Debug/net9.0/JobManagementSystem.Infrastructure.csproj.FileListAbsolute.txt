@@ -1,0 +1,15 @@
+C:\Users\Windows10\Desktop\BoardDirector\JobManagementSystem.Infrastructure\obj\Debug\net9.0\JobManagementSystem.Infrastructure.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Windows10\Desktop\BoardDirector\JobManagementSystem.Infrastructure\obj\Debug\net9.0\JobManagementSystem.Infrastructure.AssemblyInfoInputs.cache
+C:\Users\Windows10\Desktop\BoardDirector\JobManagementSystem.Infrastructure\obj\Debug\net9.0\JobManagementSystem.Infrastructure.AssemblyInfo.cs
+C:\Users\Windows10\Desktop\BoardDirector\JobManagementSystem.Infrastructure\obj\Debug\net9.0\JobManagementSystem.Infrastructure.csproj.CoreCompileInputs.cache
+C:\Users\Windows10\Desktop\BoardDirector\JobManagementSystem.Infrastructure\obj\Debug\net9.0\JobManagementSystem.Infrastructure.csproj.AssemblyReference.cache
+C:\Users\Windows10\Desktop\BoardDirector\JobManagementSystem.Infrastructure\bin\Debug\net9.0\JobManagementSystem.Infrastructure.deps.json
+C:\Users\Windows10\Desktop\BoardDirector\JobManagementSystem.Infrastructure\bin\Debug\net9.0\JobManagementSystem.Infrastructure.dll
+C:\Users\Windows10\Desktop\BoardDirector\JobManagementSystem.Infrastructure\bin\Debug\net9.0\JobManagementSystem.Infrastructure.pdb
+C:\Users\Windows10\Desktop\BoardDirector\JobManagementSystem.Infrastructure\bin\Debug\net9.0\JobManagementSystem.Core.dll
+C:\Users\Windows10\Desktop\BoardDirector\JobManagementSystem.Infrastructure\bin\Debug\net9.0\JobManagementSystem.Core.pdb
+C:\Users\Windows10\Desktop\BoardDirector\JobManagementSystem.Infrastructure\obj\Debug\net9.0\JobManag.C9694AA1.Up2Date
+C:\Users\Windows10\Desktop\BoardDirector\JobManagementSystem.Infrastructure\obj\Debug\net9.0\JobManagementSystem.Infrastructure.dll
+C:\Users\Windows10\Desktop\BoardDirector\JobManagementSystem.Infrastructure\obj\Debug\net9.0\refint\JobManagementSystem.Infrastructure.dll
+C:\Users\Windows10\Desktop\BoardDirector\JobManagementSystem.Infrastructure\obj\Debug\net9.0\JobManagementSystem.Infrastructure.pdb
+C:\Users\Windows10\Desktop\BoardDirector\JobManagementSystem.Infrastructure\obj\Debug\net9.0\ref\JobManagementSystem.Infrastructure.dll
