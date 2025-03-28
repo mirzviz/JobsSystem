@@ -99,16 +99,18 @@ Press Ctrl+C to stop the application. The system will:
 
 ## Implementation Details
 
-- Uses in-memory storage for job data (InMemoryJobQueue)
-- Implements concurrent job processing with configurable parallelism
+- Uses PostgreSQL database for job and worker node storage
+- Implements atomic job claiming to prevent race conditions
+- Worker nodes register and send heartbeats to maintain availability
 - Supports job prioritization (High priority jobs are processed first)
 - Includes real-time progress tracking
 - Provides graceful shutdown handling
 
-## Note
+## Production Considerations
 
-This is a demonstration version using in-memory storage. For production use, you would want to:
-1. Use a persistent database (the EntityFramework implementation is already included)
-2. Add authentication and authorization
-3. Implement proper error handling and retry mechanisms
-4. Add monitoring and alerting capabilities 
+For a production deployment, consider:
+1. Adding authentication and authorization
+2. Implementing proper error handling and retry mechanisms
+3. Adding monitoring and alerting capabilities
+4. Setting up high availability for the PostgreSQL database
+5. Using container orchestration like Kubernetes for automatic scaling 
