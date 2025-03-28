@@ -1,129 +1,163 @@
 using System;
-using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Linq;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using JobManagementSystem.Core.Interfaces;
 using JobManagementSystem.Core.Models;
+using JobManagementSystem.Infrastructure.Data;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
-namespace JobManagementSystem.Infrastructure.Services
+namespace JobManagementSystem.Infrastructure.Services;
+
+public class BackgroundJobProcessor : BackgroundService
 {
-    public class BackgroundJobProcessor : BackgroundService
+    private readonly ILogger<BackgroundJobProcessor> _logger;
+    private readonly IServiceProvider _serviceProvider;
+    private readonly WorkerNodeService _workerNodeService;
+    private readonly TimeSpan _jobPollingInterval = TimeSpan.FromSeconds(5);
+    private Job? _currentJob;
+
+    public BackgroundJobProcessor(
+        ILogger<BackgroundJobProcessor> logger,
+        IServiceProvider serviceProvider,
+        WorkerNodeService workerNodeService)
     {
-        private readonly IJobQueue _jobQueue;
-        private readonly ILogger<BackgroundJobProcessor> _logger;
-        private readonly SemaphoreSlim _semaphore;
-        private readonly ConcurrentDictionary<Guid, Task> _runningJobs;
-        private readonly int _maxConcurrentJobs;
+        _logger = logger;
+        _serviceProvider = serviceProvider;
+        _workerNodeService = workerNodeService;
+    }
 
-        public BackgroundJobProcessor(
-            IJobQueue jobQueue,
-            ILogger<BackgroundJobProcessor> logger,
-            int maxConcurrentJobs = 3)
-        {
-            _jobQueue = jobQueue;
-            _logger = logger;
-            _maxConcurrentJobs = maxConcurrentJobs;
-            _semaphore = new SemaphoreSlim(maxConcurrentJobs);
-            _runningJobs = new ConcurrentDictionary<Guid, Task>();
-        }
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("Background job processor starting...");
 
-        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+        try
         {
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
                 {
-                    // Get all pending jobs
-                    var pendingJobs = await _jobQueue.GetJobsAsync(JobStatus.Pending);
-                    
-                    // Process high priority jobs first
-                    foreach (var job in pendingJobs.OrderByDescending(j => j.Priority))
+                    if (_currentJob == null)
                     {
-                        if (stoppingToken.IsCancellationRequested)
-                            break;
-
-                        // Wait for a slot to become available
-                        await _semaphore.WaitAsync(stoppingToken);
-
-                        // Start processing the job
-                        var jobTask = ProcessJobAsync(job, stoppingToken);
-                        _runningJobs.TryAdd(job.Id, jobTask);
-
-                        // Fire and forget, but log any errors
-                        _ = jobTask.ContinueWith(
-                            async t => 
-                            {
-                                _semaphore.Release();
-                                _runningJobs.TryRemove(job.Id, out _);
-                                
-                                if (t.IsFaulted && t.Exception != null)
-                                {
-                                    _logger.LogError(t.Exception, "Job {JobId} failed with error", job.Id);
-                                    await _jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Failed, t.Exception.Message);
-                                }
-                            },
-                            TaskContinuationOptions.ExecuteSynchronously);
+                        // Only look for a new job if we're not processing one already
+                        await ClaimAndProcessNextJobAsync(stoppingToken);
                     }
-
-                    // Wait a bit before checking for new jobs
-                    await Task.Delay(1000, stoppingToken);
+                    else
+                    {
+                        // We're already processing a job, wait for the next polling interval
+                        await Task.Delay(_jobPollingInterval, stoppingToken);
+                    }
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error in background job processor");
-                    await Task.Delay(5000, stoppingToken); // Wait longer on error
+                    await Task.Delay(_jobPollingInterval, stoppingToken);
                 }
             }
         }
-
-        private async Task ProcessJobAsync(Job job, CancellationToken cancellationToken)
+        catch (OperationCanceledException)
         {
+            // Shutdown requested
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in background job processor");
+        }
+        finally
+        {
+            _logger.LogInformation("Stopping background job processor");
+            
+            // If we're processing a job during shutdown, mark it as stopped
+            if (_currentJob != null)
+            {
+                try
+                {
+                    using var scope = _serviceProvider.CreateScope();
+                    var jobQueue = scope.ServiceProvider.GetRequiredService<IJobQueue>();
+                    await jobQueue.UpdateJobStatusAsync(_currentJob.Id, JobStatus.Stopped, "Worker shutdown");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error stopping job during shutdown");
+                }
+            }
+        }
+    }
+
+    private async Task ClaimAndProcessNextJobAsync(CancellationToken stoppingToken)
+    {
+        // Claim a single job from the database
+        using var scope = _serviceProvider.CreateScope();
+        var jobQueue = scope.ServiceProvider.GetRequiredService<IJobQueue>();
+        var jobs = await ((EfCoreJobQueue)jobQueue).ClaimJobsAsync(1);
+
+        // If we found a job to process
+        if (jobs.Any())
+        {
+            var job = jobs.First();
+            _currentJob = job;
+            
+            _logger.LogInformation("Starting job {JobId}", job.Id);
+
             try
             {
-                _logger.LogInformation("Starting job {JobId}", job.Id);
-                await _jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Running);
-
-                // Simulate work with progress updates
+                // Simulate job execution with progress updates
                 for (int progress = 0; progress <= 100; progress += 10)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
+                    if (stoppingToken.IsCancellationRequested)
+                    {
+                        await jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Stopped);
+                        _currentJob = null;
+                        return;
+                    }
 
-                    // Simulate some work
-                    await Task.Delay(1000, cancellationToken);
-                    await _jobQueue.UpdateJobProgressAsync(job.Id, progress);
-                    
+                    await jobQueue.UpdateJobProgressAsync(job.Id, progress);
                     _logger.LogInformation("Job {JobId} progress: {Progress}%", job.Id, progress);
+                    await Task.Delay(1000, stoppingToken); // Simulate work being done
                 }
 
-                await _jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Completed);
+                await jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Completed);
                 _logger.LogInformation("Job {JobId} completed successfully", job.Id);
             }
             catch (OperationCanceledException)
             {
-                await _jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Stopped);
+                // Job was canceled
+                await jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Stopped);
                 _logger.LogInformation("Job {JobId} was cancelled", job.Id);
-                throw;
             }
             catch (Exception ex)
             {
-                await _jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Failed, ex.Message);
+                // Job failed
+                await jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Failed, ex.Message);
                 _logger.LogError(ex, "Job {JobId} failed", job.Id);
-                throw;
+            }
+            finally
+            {
+                _currentJob = null;
+
+                // Update worker node status
+                try
+                {
+                    using var dbContext = scope.ServiceProvider.GetRequiredService<JobManagementDbContext>();
+                    var node = await dbContext.WorkerNodes.FindAsync(_workerNodeService.NodeId);
+                    if (node != null)
+                    {
+                        node.CurrentJobCount = _currentJob == null ? 0 : 1;
+                        node.Status = _currentJob == null ? WorkerStatus.Available : WorkerStatus.Busy;
+                        await dbContext.SaveChangesAsync();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to update worker node status");
+                }
             }
         }
-
-        public override async Task StopAsync(CancellationToken cancellationToken)
+        else
         {
-            _logger.LogInformation("Stopping background job processor");
-            
-            // Wait for all running jobs to complete
-            var runningTasks = _runningJobs.Values.ToList();
-            await Task.WhenAll(runningTasks);
-            
-            await base.StopAsync(cancellationToken);
+            // No job found, wait before checking again
+            await Task.Delay(_jobPollingInterval, stoppingToken);
         }
     }
 } 

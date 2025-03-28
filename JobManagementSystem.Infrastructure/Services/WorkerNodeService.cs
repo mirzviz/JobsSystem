@@ -1,82 +1,148 @@
 using System;
-using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Sockets;
+using System.Threading;
 using System.Threading.Tasks;
-using JobManagementSystem.Core.Interfaces;
 using JobManagementSystem.Core.Models;
+using JobManagementSystem.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
-namespace JobManagementSystem.Infrastructure.Services
+namespace JobManagementSystem.Infrastructure.Services;
+
+public class WorkerNodeService : BackgroundService
 {
-    public class WorkerNodeService : IWorkerNode
+    private readonly IServiceProvider _serviceProvider;
+    private readonly ILogger<WorkerNodeService> _logger;
+    private readonly Guid _nodeId;
+    private readonly string _nodeName;
+    private readonly int _maxConcurrentJobs;
+    private readonly TimeSpan _heartbeatInterval = TimeSpan.FromSeconds(15);
+
+    public WorkerNodeService(
+        IServiceProvider serviceProvider,
+        ILogger<WorkerNodeService> logger)
     {
-        private readonly IJobQueue _jobQueue;
-        private readonly ConcurrentDictionary<Guid, Task> _runningJobs;
-        private WorkerStatus _status;
+        _serviceProvider = serviceProvider;
+        _logger = logger;
+        _nodeId = Guid.NewGuid();
+        _nodeName = $"Worker-{_nodeId.ToString().Substring(0, 8)}-{GetLocalIPAddress()}";
+        _maxConcurrentJobs = 3; // Default value, could be configurable
+    }
 
-        public string NodeId { get; }
-        public WorkerStatus Status => _status;
+    public Guid NodeId => _nodeId;
 
-        public WorkerNodeService(IJobQueue jobQueue)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("Worker node service starting with ID: {NodeId}", _nodeId);
+
+        // Register this worker node
+        await RegisterNodeAsync(stoppingToken);
+
+        // Send heartbeats periodically
+        while (!stoppingToken.IsCancellationRequested)
         {
-            NodeId = Guid.NewGuid().ToString();
-            _jobQueue = jobQueue;
-            _runningJobs = new ConcurrentDictionary<Guid, Task>();
-            _status = WorkerStatus.Idle;
-        }
-
-        public async Task<bool> StartJobAsync(Job job)
-        {
-            if (_status != WorkerStatus.Idle)
-                return false;
-
-            var jobTask = Task.Run(async () =>
+            try
             {
-                try
-                {
-                    await _jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Running);
-                    _status = WorkerStatus.Active;
-
-                    // Simulate job execution with progress updates
-                    for (int progress = 0; progress <= 100; progress += 10)
-                    {
-                        if (_status != WorkerStatus.Active)
-                            break;
-
-                        await _jobQueue.UpdateJobProgressAsync(job.Id, progress);
-                        await Task.Delay(1000); // Simulate work
-                    }
-
-                    if (_status == WorkerStatus.Active)
-                        await _jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Completed);
-                }
-                catch (Exception ex)
-                {
-                    await _jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Failed, ex.Message);
-                }
-                finally
-                {
-                    _runningJobs.TryRemove(job.Id, out _);
-                    if (_runningJobs.IsEmpty)
-                        _status = WorkerStatus.Idle;
-                }
-            });
-
-            return _runningJobs.TryAdd(job.Id, jobTask);
-        }
-
-        public async Task<bool> StopJobAsync(Guid jobId)
-        {
-            if (_runningJobs.TryGetValue(jobId, out var task))
-            {
-                await _jobQueue.UpdateJobStatusAsync(jobId, JobStatus.Stopped);
-                return true;
+                await UpdateNodeHeartbeatAsync(stoppingToken);
+                await Task.Delay(_heartbeatInterval, stoppingToken);
             }
-            return false;
+            catch (OperationCanceledException)
+            {
+                // Shutdown requested
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in worker node heartbeat");
+                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+            }
         }
 
-        public Task UpdateStatusAsync(WorkerStatus status)
+        // Deregister on shutdown
+        try
         {
-            _status = status;
-            return Task.CompletedTask;
+            await DeregisterNodeAsync(CancellationToken.None);
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deregistering node during shutdown");
+        }
+    }
+
+    private async Task RegisterNodeAsync(CancellationToken cancellationToken)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<JobManagementDbContext>();
+
+        var node = new WorkerNode
+        {
+            Id = _nodeId,
+            Name = _nodeName,
+            LastHeartbeat = DateTime.UtcNow,
+            IsActive = true,
+            CurrentJobCount = 0,
+            MaxConcurrentJobs = _maxConcurrentJobs,
+            Status = WorkerStatus.Available
+        };
+
+        dbContext.WorkerNodes.Add(node);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        _logger.LogInformation("Worker node registered: {NodeId}", _nodeId);
+    }
+
+    private async Task UpdateNodeHeartbeatAsync(CancellationToken cancellationToken)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<JobManagementDbContext>();
+
+        var node = await dbContext.WorkerNodes.FindAsync(new object[] { _nodeId }, cancellationToken);
+        if (node != null)
+        {
+            node.LastHeartbeat = DateTime.UtcNow;
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        else
+        {
+            // Node not found, try to re-register
+            await RegisterNodeAsync(cancellationToken);
+        }
+    }
+
+    private async Task DeregisterNodeAsync(CancellationToken cancellationToken)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<JobManagementDbContext>();
+
+        var node = await dbContext.WorkerNodes.FindAsync(new object[] { _nodeId }, cancellationToken);
+        if (node != null)
+        {
+            node.IsActive = false;
+            node.Status = WorkerStatus.Offline;
+            await dbContext.SaveChangesAsync(cancellationToken);
+            _logger.LogInformation("Worker node deregistered: {NodeId}", _nodeId);
+        }
+    }
+
+    private string GetLocalIPAddress()
+    {
+        try
+        {
+            var host = Dns.GetHostEntry(Dns.GetHostName());
+            foreach (var ip in host.AddressList)
+            {
+                if (ip.AddressFamily == AddressFamily.InterNetwork)
+                {
+                    return ip.ToString();
+                }
+            }
+        }
+        catch
+        {
+            // Fallback to loopback if we can't get the IP
+        }
+        return "127.0.0.1";
     }
 } 
