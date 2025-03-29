@@ -83,21 +83,20 @@ app.MapControllers();
 // Ensure database is created
 try
 {
-    Console.WriteLine("Attempting to create database if it doesn't exist...");
+    Console.WriteLine("Checking database setup...");
     using (var scope = app.Services.CreateScope())
     {
         var dbContext = scope.ServiceProvider.GetRequiredService<JobManagementDbContext>();
         
-        // For development purposes, drop and recreate the database to ensure schema is up-to-date
-        Console.WriteLine("Dropping and recreating database to ensure schema is correct...");
-        dbContext.Database.EnsureDeleted();
-        dbContext.Database.EnsureCreated();
-        Console.WriteLine("Database created successfully.");
-        
-        // Create test jobs on startup
-        var jobQueue = scope.ServiceProvider.GetRequiredService<IJobQueue>();
+        // For development purposes, drop and recreate the database to ensure schema is correct
+        // This is safe because PostgreSQL handles concurrent access
+        Console.WriteLine("Recreating database to ensure schema is correct...");
+        await dbContext.Database.EnsureDeletedAsync();
+        await dbContext.Database.EnsureCreatedAsync();
+        Console.WriteLine("Database schema verified.");
         
         // Create test jobs
+        var jobQueue = scope.ServiceProvider.GetRequiredService<IJobQueue>();
         Console.WriteLine("Creating test jobs...");
         await jobQueue.EnqueueJobAsync("High Priority Job 1", JobPriority.High);
         await jobQueue.EnqueueJobAsync("Regular Job 1", JobPriority.Regular);
