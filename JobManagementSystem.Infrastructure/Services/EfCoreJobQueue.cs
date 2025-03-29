@@ -163,7 +163,7 @@ public class EfCoreJobQueue : IJobQueue
             // Use raw SQL to avoid race conditions when multiple workers try to claim jobs
             var sql = @"
                 UPDATE ""Jobs"" 
-                SET ""WorkerNodeId"" = :nodeId, ""Status"" = :runningStatus, ""LastClaimTime"" = :now 
+                SET ""WorkerNodeId"" = :nodeId, ""Status"" = :runningStatus, ""LastClaimTime"" = :now, ""StartedAt"" = :now 
                 WHERE ""Id"" IN (
                     SELECT ""Id"" 
                     FROM ""Jobs"" 

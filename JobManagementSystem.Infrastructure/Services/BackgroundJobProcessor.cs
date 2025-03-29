@@ -91,6 +91,7 @@ public class BackgroundJobProcessor : BackgroundService
         // Claim a single job from the database
         using var scope = _serviceProvider.CreateScope();
         var jobQueue = scope.ServiceProvider.GetRequiredService<IJobQueue>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<JobManagementDbContext>();
         var jobs = await jobQueue.ClaimJobsAsync(1);
 
         // If we found a job to process
@@ -100,6 +101,23 @@ public class BackgroundJobProcessor : BackgroundService
             _currentJob = job;
             
             _logger.LogInformation("Starting job {JobId}", job.Id);
+
+            // Update worker node status to indicate it's processing a job
+            try
+            {
+                var node = await dbContext.WorkerNodes.FindAsync(_workerNodeService.NodeId);
+                if (node != null)
+                {
+                    node.IsProcessingJob = true;
+                    node.CurrentJobId = job.Id;
+                    node.Status = WorkerStatus.Busy;
+                    await dbContext.SaveChangesAsync();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to update worker node status at job start");
+            }
 
             try
             {
@@ -140,13 +158,12 @@ public class BackgroundJobProcessor : BackgroundService
                 // Update worker node status
                 try
                 {
-                    using var dbContext = scope.ServiceProvider.GetRequiredService<JobManagementDbContext>();
                     var node = await dbContext.WorkerNodes.FindAsync(_workerNodeService.NodeId);
                     if (node != null)
                     {
-                        node.IsProcessingJob = _currentJob != null;
-                        node.CurrentJobId = _currentJob?.Id;
-                        node.Status = _currentJob == null ? WorkerStatus.Available : WorkerStatus.Busy;
+                        node.IsProcessingJob = false;
+                        node.CurrentJobId = null;
+                        node.Status = WorkerStatus.Available;
                         await dbContext.SaveChangesAsync();
                     }
                 }
