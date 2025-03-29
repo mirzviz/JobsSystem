@@ -29,6 +29,12 @@ bld/
 # Explicit project build directories to ignore
 **/bin/
 **/obj/
+**/*.dll
+**/*.exe
+**/*.pdb
+**/*.cache
+**/refint/
+**/net9.0/
 JobManagementSystem.Api/bin/
 JobManagementSystem.Api/obj/
 JobManagementSystem.Core/bin/
