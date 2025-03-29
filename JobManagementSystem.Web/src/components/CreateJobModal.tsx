@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { JobPriority } from '../types/Job';
+import { Job, JobPriority } from '../types/Job';
 import { createJob, CreateJobRequest } from '../services/jobService';
 
 interface CreateJobModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onJobCreated: () => void;
+  onJobCreated: (job: Job) => void;
 }
 
 const CreateJobModal: React.FC<CreateJobModalProps> = ({ isOpen, onClose, onJobCreated }) => {
@@ -33,10 +33,9 @@ const CreateJobModal: React.FC<CreateJobModalProps> = ({ isOpen, onClose, onJobC
         priority
       };
       
-      await createJob(newJob);
-      onJobCreated();
+      const createdJob = await createJob(newJob);
+      onJobCreated(createdJob);
       resetForm();
-      onClose();
     } catch (error) {
       console.error('Failed to create job:', error);
       alert('Failed to create job. Please try again.');
