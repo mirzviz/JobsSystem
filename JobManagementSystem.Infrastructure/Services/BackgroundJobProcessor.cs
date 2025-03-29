@@ -16,17 +16,20 @@ public class BackgroundJobProcessor : BackgroundService
     private readonly ILogger<BackgroundJobProcessor> _logger;
     private readonly IServiceProvider _serviceProvider;
     private readonly WorkerNodeService _workerNodeService;
+    private readonly IJobProgressNotifier? _jobProgressNotifier;
     private readonly TimeSpan _jobPollingInterval = TimeSpan.FromSeconds(5);
     private Job? _currentJob;
 
     public BackgroundJobProcessor(
         ILogger<BackgroundJobProcessor> logger,
         IServiceProvider serviceProvider,
-        WorkerNodeService workerNodeService)
+        WorkerNodeService workerNodeService,
+        IJobProgressNotifier? jobProgressNotifier = null)
     {
         _logger = logger;
         _serviceProvider = serviceProvider;
         _workerNodeService = workerNodeService;
+        _jobProgressNotifier = jobProgressNotifier;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -77,6 +80,7 @@ public class BackgroundJobProcessor : BackgroundService
                     using var scope = _serviceProvider.CreateScope();
                     var jobQueue = scope.ServiceProvider.GetRequiredService<IJobQueue>();
                     await jobQueue.UpdateJobStatusAsync(_currentJob.Id, JobStatus.Stopped, "Worker shutdown");
+                    await SendJobProgressUpdateAsync(GetJobId(_currentJob.Id), 0, JobStatus.Stopped, "Worker shutdown");
                 }
                 catch (Exception ex)
                 {
@@ -104,6 +108,9 @@ public class BackgroundJobProcessor : BackgroundService
                 
                 _logger.LogInformation("Starting job {JobId}", job.Id);
 
+                // Send initial progress update
+                await SendJobProgressUpdateAsync(GetJobId(job.Id), 0, JobStatus.Running, "Starting job");
+
                 // Update worker node status to indicate it's processing a job
                 try
                 {
@@ -129,28 +136,33 @@ public class BackgroundJobProcessor : BackgroundService
                         if (stoppingToken.IsCancellationRequested)
                         {
                             await jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Stopped);
+                            await SendJobProgressUpdateAsync(GetJobId(job.Id), progress, JobStatus.Stopped, "Job stopped due to shutdown");
                             _currentJob = null;
                             return;
                         }
 
                         await jobQueue.UpdateJobProgressAsync(job.Id, progress);
+                        await SendJobProgressUpdateAsync(GetJobId(job.Id), progress, JobStatus.Running);
                         _logger.LogInformation("Job {JobId} progress: {Progress}%", job.Id, progress);
                         await Task.Delay(1000, stoppingToken); // Simulate work being done
                     }
 
                     await jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Completed);
+                    await SendJobProgressUpdateAsync(GetJobId(job.Id), 100, JobStatus.Completed, "Job completed successfully");
                     _logger.LogInformation("Job {JobId} completed successfully", job.Id);
                 }
                 catch (OperationCanceledException)
                 {
                     // Job was canceled
                     await jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Stopped);
+                    await SendJobProgressUpdateAsync(GetJobId(job.Id), 0, JobStatus.Stopped, "Job was canceled");
                     _logger.LogInformation("Job {JobId} was cancelled", job.Id);
                 }
                 catch (Exception ex)
                 {
                     // Job failed
                     await jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Failed, ex.Message);
+                    await SendJobProgressUpdateAsync(GetJobId(job.Id), 0, JobStatus.Failed, ex.Message);
                     _logger.LogError(ex, "Job {JobId} failed", job.Id);
                 }
                 finally
@@ -189,6 +201,39 @@ public class BackgroundJobProcessor : BackgroundService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing job");
+        }
+    }
+
+    // Helper method to convert Guid to int
+    private int GetJobId(Guid jobId)
+    {
+        // For simplicity, just use the hashcode
+        return jobId.GetHashCode();
+    }
+
+    private async Task SendJobProgressUpdateAsync(int jobId, int progress, JobStatus status, string? statusMessage = null)
+    {
+        if (_jobProgressNotifier == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var update = new JobProgressUpdate
+            {
+                JobId = jobId,
+                Progress = progress,
+                Status = status,
+                StatusMessage = statusMessage,
+                Timestamp = DateTime.UtcNow
+            };
+
+            await _jobProgressNotifier.NotifyJobProgressAsync(update);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send job progress update");
         }
     }
 } 

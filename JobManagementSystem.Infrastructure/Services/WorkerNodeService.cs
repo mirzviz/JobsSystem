@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
+using JobManagementSystem.Core.Interfaces;
 using JobManagementSystem.Core.Models;
 using JobManagementSystem.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -16,16 +17,19 @@ public class WorkerNodeService : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<WorkerNodeService> _logger;
+    private readonly IWorkerStatusNotifier? _workerStatusNotifier;
     private readonly Guid _nodeId;
     private readonly string _nodeName;
     private readonly TimeSpan _heartbeatInterval = TimeSpan.FromSeconds(15);
 
     public WorkerNodeService(
         IServiceProvider serviceProvider,
-        ILogger<WorkerNodeService> logger)
+        ILogger<WorkerNodeService> logger,
+        IWorkerStatusNotifier? workerStatusNotifier = null)
     {
         _serviceProvider = serviceProvider;
         _logger = logger;
+        _workerStatusNotifier = workerStatusNotifier;
         _nodeId = Guid.NewGuid();
         _nodeName = $"Worker-{_nodeId.ToString().Substring(0, 8)}-{GetLocalIPAddress()}";
     }
@@ -88,6 +92,9 @@ public class WorkerNodeService : BackgroundService
         dbContext.WorkerNodes.Add(node);
         await dbContext.SaveChangesAsync(cancellationToken);
         _logger.LogInformation("Worker node registered: {NodeId}", _nodeId);
+        
+        // Send worker status update
+        await SendWorkerStatusUpdateAsync(node);
     }
 
     private async Task UpdateNodeHeartbeatAsync(CancellationToken cancellationToken)
@@ -100,6 +107,9 @@ public class WorkerNodeService : BackgroundService
         {
             node.LastHeartbeat = DateTime.UtcNow;
             await dbContext.SaveChangesAsync(cancellationToken);
+            
+            // Send worker status update
+            await SendWorkerStatusUpdateAsync(node);
         }
         else
         {
@@ -120,6 +130,36 @@ public class WorkerNodeService : BackgroundService
             node.Status = WorkerStatus.Offline;
             await dbContext.SaveChangesAsync(cancellationToken);
             _logger.LogInformation("Worker node deregistered: {NodeId}", _nodeId);
+            
+            // Send worker status update
+            await SendWorkerStatusUpdateAsync(node);
+        }
+    }
+    
+    private async Task SendWorkerStatusUpdateAsync(WorkerNode node)
+    {
+        if (_workerStatusNotifier == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var update = new WorkerStatusUpdate
+            {
+                NodeId = node.Id,
+                Name = node.Name,
+                Status = node.Status,
+                IsProcessingJob = node.IsProcessingJob,
+                CurrentJobId = node.CurrentJobId,
+                Timestamp = DateTime.UtcNow
+            };
+
+            await _workerStatusNotifier.NotifyWorkerStatusAsync(update);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send worker status update");
         }
     }
 

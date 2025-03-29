@@ -23,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\JobManagementSystem.Core\JobManagementSystem.Core.csproj" />
     <ProjectReference Include="..\JobManagementSystem.Infrastructure\JobManagementSystem.Infrastructure.csproj" />
+    <ProjectReference Include="..\JobManagementSystem.Api\JobManagementSystem.Api.csproj" />
   </ItemGroup>
 
 </Project>

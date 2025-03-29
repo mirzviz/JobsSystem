@@ -5,10 +5,13 @@ using JobManagementSystem.Core.Interfaces;
 using JobManagementSystem.Core.Models;
 using JobManagementSystem.Infrastructure.Data;
 using JobManagementSystem.Infrastructure.Services;
+using JobManagementSystem.Api.Hubs;
+using JobManagementSystem.Api.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Cors;
+using Microsoft.AspNetCore.SignalR;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -40,14 +43,22 @@ builder.Services.AddScoped<IJobQueue, EfCoreJobQueue>();
 builder.Services.AddHostedService<BackgroundJobProcessor>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<WorkerNodeService>());
 
+// Add SignalR
+builder.Services.AddSignalR();
+
+// Add SignalR notification services
+builder.Services.AddSingleton<IJobProgressNotifier, SignalRJobProgressNotifier>();
+builder.Services.AddSingleton<IWorkerStatusNotifier, SignalRWorkerStatusNotifier>();
+
 // Add CORS
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.AllowAnyOrigin()
+        policy.WithOrigins("http://localhost:5173") // Adjust for your client app
               .AllowAnyMethod()
-              .AllowAnyHeader();
+              .AllowAnyHeader()
+              .AllowCredentials(); // Required for SignalR
     });
 });
 
@@ -79,6 +90,10 @@ app.UseCors();
 app.UseRouting();
 app.UseAuthorization();
 app.MapControllers();
+
+// Map SignalR hubs
+app.MapHub<JobProgressHub>("/hubs/jobProgress");
+app.MapHub<WorkerStatusHub>("/hubs/workerStatus");
 
 // Ensure database is created
 try
