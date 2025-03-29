@@ -13,3 +13,5 @@ C:\Users\Windows10\Desktop\BoardDirector\JobManagementSystem.Infrastructure\obj\
 C:\Users\Windows10\Desktop\BoardDirector\JobManagementSystem.Infrastructure\obj\Debug\net9.0\refint\JobManagementSystem.Infrastructure.dll
 C:\Users\Windows10\Desktop\BoardDirector\JobManagementSystem.Infrastructure\obj\Debug\net9.0\JobManagementSystem.Infrastructure.pdb
 C:\Users\Windows10\Desktop\BoardDirector\JobManagementSystem.Infrastructure\obj\Debug\net9.0\ref\JobManagementSystem.Infrastructure.dll
+C:\Users\Windows10\Desktop\BoardDirector\JobManagementSystem.Infrastructure\bin\Debug\net9.0\JobManagementSystem.Infrastructure.runtimeconfig.json
+C:\Users\Windows10\Desktop\BoardDirector\JobManagementSystem.Infrastructure\obj\Debug\net9.0\JobManagementSystem.Infrastructure.genruntimeconfig.cache

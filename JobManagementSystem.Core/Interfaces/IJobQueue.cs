@@ -15,5 +15,6 @@ namespace JobManagementSystem.Core.Interfaces
         Task<bool> DeleteJobAsync(Guid jobId);
         Task<Job?> StopJobAsync(Guid jobId);
         Task<Job?> RestartJobAsync(Guid jobId);
+        Task<IEnumerable<Job>> ClaimJobsAsync(int maxJobs);
     }
 } 

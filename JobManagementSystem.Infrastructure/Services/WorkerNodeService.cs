@@ -18,7 +18,6 @@ public class WorkerNodeService : BackgroundService
     private readonly ILogger<WorkerNodeService> _logger;
     private readonly Guid _nodeId;
     private readonly string _nodeName;
-    private readonly int _maxConcurrentJobs;
     private readonly TimeSpan _heartbeatInterval = TimeSpan.FromSeconds(15);
 
     public WorkerNodeService(
@@ -29,7 +28,6 @@ public class WorkerNodeService : BackgroundService
         _logger = logger;
         _nodeId = Guid.NewGuid();
         _nodeName = $"Worker-{_nodeId.ToString().Substring(0, 8)}-{GetLocalIPAddress()}";
-        _maxConcurrentJobs = 3; // Default value, could be configurable
     }
 
     public Guid NodeId => _nodeId;
@@ -83,8 +81,7 @@ public class WorkerNodeService : BackgroundService
             Name = _nodeName,
             LastHeartbeat = DateTime.UtcNow,
             IsActive = true,
-            CurrentJobCount = 0,
-            MaxConcurrentJobs = _maxConcurrentJobs,
+            IsProcessingJob = false,
             Status = WorkerStatus.Available
         };
 

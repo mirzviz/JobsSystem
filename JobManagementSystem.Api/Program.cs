@@ -12,11 +12,26 @@ using Microsoft.AspNetCore.Cors;
 
 var builder = WebApplication.CreateBuilder(args);
 
+Console.WriteLine("=======================================================");
+Console.WriteLine("Job Management System - Horizontally Scalable Version");
+Console.WriteLine("This instance processes one job at a time.");
+Console.WriteLine("=======================================================");
+
 // Add PostgreSQL database
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
+    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+
+// Replace environment variable placeholders
+if (connectionString.Contains("${DB_PASSWORD}"))
+{
+    var dbPassword = Environment.GetEnvironmentVariable("DB_PASSWORD") ?? "devpass";
+    connectionString = connectionString.Replace("${DB_PASSWORD}", dbPassword);
+}
+
+Console.WriteLine($"Using connection string: {connectionString}");
+
 builder.Services.AddDbContext<JobManagementDbContext>(options =>
-    options.UseNpgsql(
-        builder.Configuration.GetConnectionString("DefaultConnection") ?? 
-        "Host=localhost;Database=jobmanagement;Username=postgres;Password=postgres"));
+    options.UseNpgsql(connectionString));
 
 // Add services to the container
 builder.Services.AddControllers();
@@ -66,25 +81,43 @@ app.UseAuthorization();
 app.MapControllers();
 
 // Ensure database is created
-using (var scope = app.Services.CreateScope())
+try
 {
-    var dbContext = scope.ServiceProvider.GetRequiredService<JobManagementDbContext>();
-    dbContext.Database.EnsureCreated();
-    
-    // Create test jobs on startup
-    var jobQueue = scope.ServiceProvider.GetRequiredService<IJobQueue>();
-    
-    // Create test jobs
-    await jobQueue.EnqueueJobAsync("High Priority Job 1", JobPriority.High);
-    await jobQueue.EnqueueJobAsync("Regular Job 1", JobPriority.Regular);
-    await jobQueue.EnqueueJobAsync("High Priority Job 2", JobPriority.High);
-    await jobQueue.EnqueueJobAsync("Regular Job 2", JobPriority.Regular);
-    await jobQueue.EnqueueJobAsync("High Priority Job 3", JobPriority.High);
+    Console.WriteLine("Attempting to create database if it doesn't exist...");
+    using (var scope = app.Services.CreateScope())
+    {
+        var dbContext = scope.ServiceProvider.GetRequiredService<JobManagementDbContext>();
+        
+        // For development purposes, drop and recreate the database to ensure schema is up-to-date
+        Console.WriteLine("Dropping and recreating database to ensure schema is correct...");
+        dbContext.Database.EnsureDeleted();
+        dbContext.Database.EnsureCreated();
+        Console.WriteLine("Database created successfully.");
+        
+        // Create test jobs on startup
+        var jobQueue = scope.ServiceProvider.GetRequiredService<IJobQueue>();
+        
+        // Create test jobs
+        Console.WriteLine("Creating test jobs...");
+        await jobQueue.EnqueueJobAsync("High Priority Job 1", JobPriority.High);
+        await jobQueue.EnqueueJobAsync("Regular Job 1", JobPriority.Regular);
+        await jobQueue.EnqueueJobAsync("High Priority Job 2", JobPriority.High);
+        await jobQueue.EnqueueJobAsync("Regular Job 2", JobPriority.Regular);
+        await jobQueue.EnqueueJobAsync("High Priority Job 3", JobPriority.High);
+        Console.WriteLine("Test jobs created successfully.");
+    }
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"Error during database setup: {ex.Message}");
+    Console.WriteLine($"Stack trace: {ex.StackTrace}");
+    if (ex.InnerException != null)
+    {
+        Console.WriteLine($"Inner exception: {ex.InnerException.Message}");
+    }
+    return;
 }
 
-Console.WriteLine("=======================================================");
-Console.WriteLine("Job Management System - Horizontally Scalable Version");
-Console.WriteLine("This instance processes one job at a time.");
 Console.WriteLine("To scale horizontally, run additional instances of the application on different ports.");
 Console.WriteLine("=======================================================");
 

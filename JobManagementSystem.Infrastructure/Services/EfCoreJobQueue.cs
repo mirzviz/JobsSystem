@@ -6,6 +6,8 @@ using JobManagementSystem.Core.Interfaces;
 using JobManagementSystem.Core.Models;
 using JobManagementSystem.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
+using NpgsqlTypes;
 using Microsoft.Extensions.Logging;
 
 namespace JobManagementSystem.Infrastructure.Services;
@@ -155,45 +157,57 @@ public class EfCoreJobQueue : IJobQueue
     public async Task<IEnumerable<Job>> ClaimJobsAsync(int maxJobs)
     {
         var currentNodeId = _workerNodeService.NodeId;
-        var claimedJobs = new List<Job>();
 
-        // Use raw SQL to avoid race conditions when multiple workers try to claim jobs
-        var sql = @"
-            UPDATE ""Jobs"" 
-            SET ""WorkerNodeId"" = @nodeId, ""Status"" = @runningStatus, ""LastClaimTime"" = @now 
-            WHERE ""Id"" IN (
-                SELECT ""Id"" 
-                FROM ""Jobs"" 
-                WHERE (""WorkerNodeId"" IS NULL OR ""LastClaimTime"" < @staleClaimTime) 
-                  AND ""Status"" = @pendingStatus 
-                ORDER BY 
-                  CASE WHEN ""Priority"" = 1 THEN 0 ELSE 1 END, -- High priority first
-                  ""CreatedAt"" ASC
-                LIMIT @limit
-            )
-            RETURNING *
-        ";
-
-        // Handle stale claims (jobs claimed by workers that died)
-        var staleClaimTime = DateTime.UtcNow.AddMinutes(-2);
-        var now = DateTime.UtcNow;
-
-        // Execute raw SQL and get the claimed jobs
-        var jobs = await _dbContext.Jobs
-            .FromSqlRaw(sql, 
-                new Microsoft.Data.SqlClient.SqlParameter("@nodeId", currentNodeId),
-                new Microsoft.Data.SqlClient.SqlParameter("@runningStatus", JobStatus.Running),
-                new Microsoft.Data.SqlClient.SqlParameter("@now", now),
-                new Microsoft.Data.SqlClient.SqlParameter("@staleClaimTime", staleClaimTime),
-                new Microsoft.Data.SqlClient.SqlParameter("@pendingStatus", JobStatus.Pending),
-                new Microsoft.Data.SqlClient.SqlParameter("@limit", maxJobs))
-            .ToListAsync();
-
-        foreach (var job in jobs)
+        try
         {
-            _logger.LogInformation("Job {JobId} claimed by worker {WorkerId}", job.Id, currentNodeId);
-        }
+            // Use raw SQL to avoid race conditions when multiple workers try to claim jobs
+            var sql = @"
+                UPDATE ""Jobs"" 
+                SET ""WorkerNodeId"" = :nodeId, ""Status"" = :runningStatus, ""LastClaimTime"" = :now 
+                WHERE ""Id"" IN (
+                    SELECT ""Id"" 
+                    FROM ""Jobs"" 
+                    WHERE (""WorkerNodeId"" IS NULL OR ""LastClaimTime"" < :staleClaimTime) 
+                      AND ""Status"" = :pendingStatus 
+                    ORDER BY 
+                      CASE WHEN ""Priority"" = 1 THEN 0 ELSE 1 END, -- High priority first
+                      ""CreatedAt"" ASC
+                    LIMIT :limit
+                )
+                RETURNING *
+            ";
 
-        return jobs;
+            // Handle stale claims (jobs claimed by workers that died)
+            var staleClaimTime = DateTime.UtcNow.AddMinutes(-2);
+            var now = DateTime.UtcNow;
+
+            // Create parameters with explicit types
+            var parameters = new[]
+            {
+                new NpgsqlParameter { ParameterName = "nodeId", Value = currentNodeId, NpgsqlDbType = NpgsqlDbType.Uuid },
+                new NpgsqlParameter { ParameterName = "runningStatus", Value = (int)JobStatus.Running, NpgsqlDbType = NpgsqlDbType.Integer },
+                new NpgsqlParameter { ParameterName = "now", Value = now, NpgsqlDbType = NpgsqlDbType.TimestampTz },
+                new NpgsqlParameter { ParameterName = "staleClaimTime", Value = staleClaimTime, NpgsqlDbType = NpgsqlDbType.TimestampTz },
+                new NpgsqlParameter { ParameterName = "pendingStatus", Value = (int)JobStatus.Pending, NpgsqlDbType = NpgsqlDbType.Integer },
+                new NpgsqlParameter { ParameterName = "limit", Value = maxJobs, NpgsqlDbType = NpgsqlDbType.Integer }
+            };
+
+            // Execute raw SQL and get the claimed jobs
+            var jobs = await _dbContext.Jobs
+                .FromSqlRaw(sql, parameters)
+                .ToListAsync();
+
+            foreach (var job in jobs)
+            {
+                _logger.LogInformation("Job {JobId} claimed by worker {WorkerId}", job.Id, currentNodeId);
+            }
+
+            return jobs;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error claiming jobs: {Message}", ex.Message);
+            return new List<Job>();
+        }
     }
 } 

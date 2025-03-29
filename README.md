@@ -44,10 +44,30 @@ To scale the system, simply run more instances on different ports. Each instance
 - **JobManagementSystem.Infrastructure**: Contains implementations of services
 - **JobManagementSystem.Api**: REST API and worker node implementation
 
+## Database Configuration
+
+The application uses PostgreSQL and securely manages the database password through environment variables:
+
+1. The connection string in `appsettings.json` uses a placeholder for the password: `${DB_PASSWORD}`
+2. Set the database password using an environment variable:
+
+```bash
+# Windows (PowerShell)
+$env:DB_PASSWORD="yourpassword"
+
+# Windows (Command Prompt)
+set DB_PASSWORD=yourpassword
+
+# Linux/macOS
+export DB_PASSWORD=yourpassword
+```
+
+If the environment variable is not set, the application will default to using "devpass" as the password.
+
 ## Running the Application
 
 1. Ensure PostgreSQL is installed and running
-2. Update the connection string in appsettings.json if needed
+2. Set up the database password as described in the **Database Configuration** section
 3. Run the application:
 
 ```bash

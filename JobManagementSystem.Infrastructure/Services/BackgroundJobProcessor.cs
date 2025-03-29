@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using JobManagementSystem.Core.Interfaces;
@@ -90,7 +91,7 @@ public class BackgroundJobProcessor : BackgroundService
         // Claim a single job from the database
         using var scope = _serviceProvider.CreateScope();
         var jobQueue = scope.ServiceProvider.GetRequiredService<IJobQueue>();
-        var jobs = await ((EfCoreJobQueue)jobQueue).ClaimJobsAsync(1);
+        var jobs = await jobQueue.ClaimJobsAsync(1);
 
         // If we found a job to process
         if (jobs.Any())
@@ -143,7 +144,8 @@ public class BackgroundJobProcessor : BackgroundService
                     var node = await dbContext.WorkerNodes.FindAsync(_workerNodeService.NodeId);
                     if (node != null)
                     {
-                        node.CurrentJobCount = _currentJob == null ? 0 : 1;
+                        node.IsProcessingJob = _currentJob != null;
+                        node.CurrentJobId = _currentJob?.Id;
                         node.Status = _currentJob == null ? WorkerStatus.Available : WorkerStatus.Busy;
                         await dbContext.SaveChangesAsync();
                     }
