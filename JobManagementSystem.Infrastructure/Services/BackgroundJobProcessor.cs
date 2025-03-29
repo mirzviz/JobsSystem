@@ -88,95 +88,107 @@ public class BackgroundJobProcessor : BackgroundService
 
     private async Task ClaimAndProcessNextJobAsync(CancellationToken stoppingToken)
     {
-        // Claim a single job from the database
-        using var scope = _serviceProvider.CreateScope();
-        var jobQueue = scope.ServiceProvider.GetRequiredService<IJobQueue>();
-        var dbContext = scope.ServiceProvider.GetRequiredService<JobManagementDbContext>();
-        var jobs = await jobQueue.ClaimJobsAsync(1);
-
-        // If we found a job to process
-        if (jobs.Any())
+        try
         {
-            var job = jobs.First();
-            _currentJob = job;
-            
-            _logger.LogInformation("Starting job {JobId}", job.Id);
+            // Claim a single job from the database
+            using var scope = _serviceProvider.CreateScope();
+            var jobQueue = scope.ServiceProvider.GetRequiredService<IJobQueue>();
+            var dbContext = scope.ServiceProvider.GetRequiredService<JobManagementDbContext>();
+            var jobs = await jobQueue.ClaimJobsAsync(1);
 
-            // Update worker node status to indicate it's processing a job
-            try
+            // If we found a job to process
+            if (jobs.Any())
             {
-                var node = await dbContext.WorkerNodes.FindAsync(_workerNodeService.NodeId);
-                if (node != null)
-                {
-                    node.IsProcessingJob = true;
-                    node.CurrentJobId = job.Id;
-                    node.Status = WorkerStatus.Busy;
-                    await dbContext.SaveChangesAsync();
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to update worker node status at job start");
-            }
+                var job = jobs.First();
+                _currentJob = job;
+                
+                _logger.LogInformation("Starting job {JobId}", job.Id);
 
-            try
-            {
-                // Simulate job execution with progress updates
-                for (int progress = 0; progress <= 100; progress += 10)
-                {
-                    if (stoppingToken.IsCancellationRequested)
-                    {
-                        await jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Stopped);
-                        _currentJob = null;
-                        return;
-                    }
-
-                    await jobQueue.UpdateJobProgressAsync(job.Id, progress);
-                    _logger.LogInformation("Job {JobId} progress: {Progress}%", job.Id, progress);
-                    await Task.Delay(1000, stoppingToken); // Simulate work being done
-                }
-
-                await jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Completed);
-                _logger.LogInformation("Job {JobId} completed successfully", job.Id);
-            }
-            catch (OperationCanceledException)
-            {
-                // Job was canceled
-                await jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Stopped);
-                _logger.LogInformation("Job {JobId} was cancelled", job.Id);
-            }
-            catch (Exception ex)
-            {
-                // Job failed
-                await jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Failed, ex.Message);
-                _logger.LogError(ex, "Job {JobId} failed", job.Id);
-            }
-            finally
-            {
-                _currentJob = null;
-
-                // Update worker node status
+                // Update worker node status to indicate it's processing a job
                 try
                 {
                     var node = await dbContext.WorkerNodes.FindAsync(_workerNodeService.NodeId);
                     if (node != null)
                     {
-                        node.IsProcessingJob = false;
-                        node.CurrentJobId = null;
-                        node.Status = WorkerStatus.Available;
+                        node.IsProcessingJob = true;
+                        node.CurrentJobId = job.Id;
+                        node.Status = WorkerStatus.Busy;
                         await dbContext.SaveChangesAsync();
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to update worker node status");
+                    _logger.LogError(ex, "Failed to update worker node status at job start");
+                }
+
+                try
+                {
+                    // Simulate job execution with progress updates
+                    for (int progress = 0; progress <= 100; progress += 10)
+                    {
+                        if (stoppingToken.IsCancellationRequested)
+                        {
+                            await jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Stopped);
+                            _currentJob = null;
+                            return;
+                        }
+
+                        await jobQueue.UpdateJobProgressAsync(job.Id, progress);
+                        _logger.LogInformation("Job {JobId} progress: {Progress}%", job.Id, progress);
+                        await Task.Delay(1000, stoppingToken); // Simulate work being done
+                    }
+
+                    await jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Completed);
+                    _logger.LogInformation("Job {JobId} completed successfully", job.Id);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Job was canceled
+                    await jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Stopped);
+                    _logger.LogInformation("Job {JobId} was cancelled", job.Id);
+                }
+                catch (Exception ex)
+                {
+                    // Job failed
+                    await jobQueue.UpdateJobStatusAsync(job.Id, JobStatus.Failed, ex.Message);
+                    _logger.LogError(ex, "Job {JobId} failed", job.Id);
+                }
+                finally
+                {
+                    _currentJob = null;
+
+                    // Update worker node status
+                    try
+                    {
+                        var node = await dbContext.WorkerNodes.FindAsync(_workerNodeService.NodeId);
+                        if (node != null)
+                        {
+                            node.IsProcessingJob = false;
+                            node.CurrentJobId = null;
+                            node.Status = WorkerStatus.Available;
+                            await dbContext.SaveChangesAsync();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to update worker node status");
+                    }
                 }
             }
+            else
+            {
+                // No job found, wait before checking again
+                await Task.Delay(_jobPollingInterval, stoppingToken);
+            }
         }
-        else
+        catch (OperationCanceledException)
         {
-            // No job found, wait before checking again
-            await Task.Delay(_jobPollingInterval, stoppingToken);
+            // Gracefully handle cancellation during shutdown
+            _logger.LogInformation("Job processing canceled due to application shutdown");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing job");
         }
     }
 } 
