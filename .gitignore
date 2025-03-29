@@ -26,6 +26,16 @@ bld/
 [Ll]og/
 [Ll]ogs/
 
+# Explicit project build directories to ignore
+**/bin/
+**/obj/
+JobManagementSystem.Api/bin/
+JobManagementSystem.Api/obj/
+JobManagementSystem.Core/bin/
+JobManagementSystem.Core/obj/
+JobManagementSystem.Infrastructure/bin/
+JobManagementSystem.Infrastructure/obj/
+
 # Visual Studio cache/options directory
 .vs/
 
