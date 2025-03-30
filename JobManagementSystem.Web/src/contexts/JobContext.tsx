@@ -49,53 +49,64 @@ const jobReducer = (state: JobContextState, action: JobAction): JobContextState 
     case 'SET_JOBS':
       return {
         ...state,
-        jobs: action.payload,
+        jobs: [...action.payload].sort((a, b) => {
+          // First sort by creation time
+          const timeA = new Date(a.createdAt).getTime();
+          const timeB = new Date(b.createdAt).getTime();
+          if (timeA !== timeB) return timeB - timeA; // Newest first
+          // If creation times are equal, sort by ID for consistency
+          return a.id.localeCompare(b.id);
+        }),
         lastRefreshed: new Date()
       };
     case 'ADD_JOB':
       // Check if job already exists
       const existingJob = state.jobs.find(job => job.id === action.payload.id);
       if (existingJob) {
-        // If job exists, update it instead of adding
-        return {
-          ...state,
-          jobs: state.jobs.map(job =>
-            job.id === action.payload.id ? { ...action.payload } : job
-          )
-        };
+        // If job exists, don't update it - this prevents overwriting existing jobs
+        return state;
       }
-      // If job doesn't exist, add it
+      // Add new job to the end without sorting
       return {
         ...state,
         jobs: [...state.jobs, action.payload]
       };
     case 'UPDATE_JOB':
-      // Convert jobId to string to ensure consistent comparison
-      const jobIdToUpdate = action.payload.jobId.toString();
+      // Try string comparison first
+      let jobIndex = state.jobs.findIndex(job => job.id === action.payload.jobId);
       
-      // If job is not found, don't update state
-      if (!state.jobs.some(job => job.id.toString() === jobIdToUpdate)) {
+      // If not found, try numeric comparison
+      if (jobIndex === -1) {
+        const numericId = parseInt(action.payload.jobId);
+        jobIndex = state.jobs.findIndex(job => {
+          const jobNumericId = parseInt(job.id);
+          return !isNaN(jobNumericId) && !isNaN(numericId) && jobNumericId === numericId;
+        });
+      }
+      
+      // If still not found, don't update state
+      if (jobIndex === -1) {
         return state;
       }
       
       // Check if actual values changed before updating
-      const jobToUpdate = state.jobs.find(job => job.id.toString() === jobIdToUpdate);
-      if (jobToUpdate && 
-          jobToUpdate.progress === action.payload.progress && 
+      const jobToUpdate = state.jobs[jobIndex];
+      if (jobToUpdate.progress === action.payload.progress && 
           jobToUpdate.status === action.payload.status) {
         return state;
       }
       
-      // Create a new jobs array but only if the job actually changes
-      const updatedJobs = state.jobs.map(job => 
-        job.id.toString() === jobIdToUpdate
-          ? { ...job, progress: action.payload.progress, status: action.payload.status }
-          : job
-      );
+      // Create new array with updated job at same index
+      const updatedJobs = [...state.jobs];
+      updatedJobs[jobIndex] = {
+        ...jobToUpdate,  // Keep ALL existing properties
+        progress: action.payload.progress,
+        status: action.payload.status
+      };
       
       return {
         ...state,
-        jobs: updatedJobs
+        jobs: updatedJobs  // Maintain original array order
       };
     case 'SET_LOADING':
       return {
@@ -150,38 +161,34 @@ export const JobProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, []);
   
   const updateJobProgress = useCallback((update: JobProgressUpdate): Notification | null => {
-    // Convert jobId to string if it's a number
-    const jobId = typeof update.jobId === 'number' ? update.jobId.toString() : update.jobId;
-    
-    // We can't pass a function to dispatch in useReducer, we need to use the current state directly
-    const jobToUpdate = state.jobs.find(job => job.id.toString() === jobId.toString());
-    
+    // First try to find by exact string match
+    let jobToUpdate = state.jobs.find(job => job.id === update.jobId.toString());
+
+    // If not found, try numeric comparison (for cases where backend sends numeric IDs)
     if (!jobToUpdate) {
-      console.log(`Job ${jobId} not found in current state, adding placeholder`);
-      // Add the job to state
-      dispatch({ 
-        type: 'ADD_JOB', 
-        payload: {
-          id: jobId.toString(),  // Ensure ID is string
-          name: `Job ${jobId.toString().substring(0, 8)}`,  // Temporary name
-          status: update.status,
-          progress: update.progress,
-          priority: JobPriority.Regular,  // Default priority
-          createdAt: new Date().toISOString()
-        }
+      const numericId = typeof update.jobId === 'number' ? update.jobId : parseInt(update.jobId);
+      jobToUpdate = state.jobs.find(job => {
+        const jobNumericId = parseInt(job.id);
+        return !isNaN(jobNumericId) && !isNaN(numericId) && jobNumericId === numericId;
       });
-      return null;
+    }
+
+    if (!jobToUpdate) {
+      console.log(`Job ${update.jobId} not found in current state`);
+      return null;  // Don't create new jobs for updates
     }
     
-    // Update existing job
-    dispatch({ 
-      type: 'UPDATE_JOB', 
-      payload: {
-        jobId: jobId.toString(),  // Ensure ID is string
-        progress: update.progress,
-        status: update.status
-      }
-    });
+    // Only dispatch update if progress or status has changed
+    if (jobToUpdate.progress !== update.progress || jobToUpdate.status !== update.status) {
+      dispatch({ 
+        type: 'UPDATE_JOB', 
+        payload: {
+          jobId: jobToUpdate.id,
+          progress: update.progress,
+          status: update.status
+        }
+      });
+    }
     
     // Return a notification if the status changed
     if (jobToUpdate.status !== update.status) {
@@ -189,7 +196,7 @@ export const JobProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
     
     return null;
-  }, [state.jobs]); // We need state.jobs to check for existing jobs
+  }, [state.jobs]);
   
   // Create context value
   const value: JobContextValue = {

@@ -204,14 +204,13 @@ public class BackgroundJobProcessor : BackgroundService
         }
     }
 
-    // Helper method to convert Guid to int
-    private int GetJobId(Guid jobId)
+    private string GetJobId(Guid jobId)
     {
-        // For simplicity, just use the hashcode
-        return jobId.GetHashCode();
+        // Return the string representation of the GUID
+        return jobId.ToString();
     }
 
-    private async Task SendJobProgressUpdateAsync(int jobId, int progress, JobStatus status, string? statusMessage = null)
+    private async Task SendJobProgressUpdateAsync(string jobId, int progress, JobStatus status, string? statusMessage = null)
     {
         if (_jobProgressNotifier == null)
         {

@@ -40,21 +40,27 @@ export const SignalRProvider: React.FC<{ children: ReactNode }> = ({ children })
       default:
         setConnectionStatus('disconnected');
     }
-  }, []);
+  }, []); // Empty dependency array since getConnectionState is stable
   
-  // Handle real-time job updates
+  // Stabilize the job update handler with useCallback and a ref
+  const updateJobProgressRef = React.useRef(updateJobProgress);
+  React.useEffect(() => {
+    updateJobProgressRef.current = updateJobProgress;
+  }, [updateJobProgress]);
+  
+  // Handle real-time job updates with stable reference
   const handleJobUpdate = useCallback((update: JobProgressUpdate) => {
     console.log('SignalR update received:', update);
     setMessageCount(prev => prev + 1);
     
-    // Update job through context
-    const notification = updateJobProgress(update);
+    // Update job through context using the ref
+    const notification = updateJobProgressRef.current(update);
     
     // Return the notification for parent component to show
     return notification;
-  }, [updateJobProgress]);
+  }, []); // Empty dependency array since we use ref
   
-  // Reconnect function
+  // Reconnect function with stable dependencies
   const reconnect = useCallback(() => {
     console.log('Manual reconnection requested');
     globalSignalRStarted.value = false;
