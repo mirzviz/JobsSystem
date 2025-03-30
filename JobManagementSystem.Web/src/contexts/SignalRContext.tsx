@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
 import { HubConnectionState } from '@microsoft/signalr';
-import { startConnection, stopConnection, getConnectionState, JobProgressUpdate } from '../services/signalRService';
+import { startConnection, stopConnection, getConnectionState, subscribeToStateChanges, JobProgressUpdate } from '../services/signalRService';
 import { useJobs } from './JobContext';
 
 // Global flag for persistent connection
@@ -10,7 +10,6 @@ export const globalSignalRStarted = { value: false };
 interface SignalRContextState {
   connectionStatus: 'connected' | 'disconnected' | 'connecting';
   messageCount: number;
-  reconnect: () => void;
 }
 
 // Create the context
@@ -18,29 +17,11 @@ const SignalRContext = createContext<SignalRContextState | undefined>(undefined)
 
 // Provider component
 export const SignalRProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'connecting'>('disconnected');
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'connecting'>('connecting');
   const [messageCount, setMessageCount] = useState<number>(0);
   
   // Get access to job context for updating jobs
-  const { updateJobProgress, addJob } = useJobs();
-  
-  // Function to update connection status display
-  const updateConnectionStatus = useCallback(() => {
-    const state = getConnectionState();
-    console.log(`SignalR connection state changed to: ${state}`);
-    
-    switch (state) {
-      case HubConnectionState.Connected:
-        setConnectionStatus('connected');
-        break;
-      case HubConnectionState.Connecting:
-      case HubConnectionState.Reconnecting:
-        setConnectionStatus('connecting');
-        break;
-      default:
-        setConnectionStatus('disconnected');
-    }
-  }, []); // Empty dependency array since getConnectionState is stable
+  const { updateJobProgress } = useJobs();
   
   // Stabilize the job update handler with useCallback and a ref
   const updateJobProgressRef = React.useRef(updateJobProgress);
@@ -60,92 +41,85 @@ export const SignalRProvider: React.FC<{ children: ReactNode }> = ({ children })
     return notification;
   }, []); // Empty dependency array since we use ref
   
-  // Reconnect function with stable dependencies
-  const reconnect = useCallback(() => {
-    console.log('Manual reconnection requested');
-    globalSignalRStarted.value = false;
-    stopConnection().then(() => {
-      setConnectionStatus('disconnected');
-      setTimeout(() => {
-        startConnection(handleJobUpdate)
-          .then(() => updateConnectionStatus())
-          .catch(err => console.error('Error reconnecting:', err));
-      }, 500);
-    });
-  }, [handleJobUpdate, updateConnectionStatus]);
-  
   // Initialize SignalR connection
   useEffect(() => {
     console.log('SignalR provider mounted');
-    
-    if (!globalSignalRStarted.value) {
-      globalSignalRStarted.value = true;
-      console.log('Initializing SignalR connection...');
+    let isCleaningUp = false;
+    let reconnectTimeout: NodeJS.Timeout | null = null;
+
+    const initializeConnection = async () => {
+      if (isCleaningUp) return;
       
-      let isCleaningUp = false;
-      let connectionCheckInterval: NodeJS.Timeout | null = null;
-      
-      // Start connection
-      setConnectionStatus('connecting');
-      startConnection(handleJobUpdate)
-        .then(() => {
-          if (isCleaningUp) return;
-          
+      try {
+        console.log('Initializing SignalR connection...');
+        setConnectionStatus('connecting');
+        await startConnection(handleJobUpdate);
+        if (!isCleaningUp) {
           console.log('SignalR connection established');
-          updateConnectionStatus();
-          
-          // Check connection status periodically
-          connectionCheckInterval = setInterval(() => {
-            const state = getConnectionState();
-            updateConnectionStatus();
-            
-            // Auto-reconnect if disconnected
-            if (state === HubConnectionState.Disconnected) {
-              console.log('Connection lost - auto-reconnecting');
-              startConnection(handleJobUpdate)
-                .then(() => updateConnectionStatus())
-                .catch(err => console.warn('Auto-reconnect attempt failed:', err));
-            }
-          }, 5000);
-        })
-        .catch((error) => {
-          if (isCleaningUp) return;
-          
-          console.error('SignalR connection error:', error);
-          setConnectionStatus('disconnected');
-          
-          // Auto-retry after error
-          setTimeout(() => {
-            if (!isCleaningUp) {
-              console.log('Retrying connection after error');
-              globalSignalRStarted.value = false;
-              reconnect();
-            }
-          }, 5000);
-        });
-        
-      // Cleanup function
-      return () => {
-        isCleaningUp = true;
-        console.log('SignalR provider unmounting - cleanup');
-        
-        if (connectionCheckInterval) {
-          clearInterval(connectionCheckInterval);
+          setConnectionStatus('connected');
         }
+      } catch (error) {
+        if (isCleaningUp) return;
         
-        // Don't stop connection on unmount to maintain it across renders
-        console.log('Maintaining connection during component lifecycle');
-      };
-    }
+        console.error('SignalR connection error:', error);
+        setConnectionStatus('disconnected');
+        
+        // Auto-retry after error
+        reconnectTimeout = setTimeout(() => {
+          if (!isCleaningUp) {
+            console.log('Retrying connection...');
+            initializeConnection();
+          }
+        }, 5000);
+      }
+    };
+
+    // Subscribe to state changes
+    const handleStateChange = (state: HubConnectionState) => {
+      if (isCleaningUp) return;
+      
+      console.log('SignalR state changed:', state);
+      switch (state) {
+        case HubConnectionState.Connected:
+          setConnectionStatus('connected');
+          break;
+        case HubConnectionState.Connecting:
+        case HubConnectionState.Reconnecting:
+          setConnectionStatus('connecting');
+          break;
+        case HubConnectionState.Disconnected:
+          setConnectionStatus('disconnected');
+          // Auto reconnect when disconnected
+          reconnectTimeout = setTimeout(() => {
+            if (!isCleaningUp) {
+              console.log('Auto-reconnecting...');
+              initializeConnection();
+            }
+          }, 5000);
+          break;
+      }
+    };
+
+    // Start initial connection
+    initializeConnection();
     
-    return () => {};
-  }, [handleJobUpdate, updateConnectionStatus, reconnect]);
+    // Subscribe to state changes
+    subscribeToStateChanges(handleStateChange);
+      
+    // Cleanup function
+    return () => {
+      isCleaningUp = true;
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
+      stopConnection().catch(console.error);
+    };
+  }, [handleJobUpdate]);
   
   // Context value
   const value: SignalRContextState = {
     connectionStatus,
-    messageCount,
-    reconnect
+    messageCount
   };
   
   return (

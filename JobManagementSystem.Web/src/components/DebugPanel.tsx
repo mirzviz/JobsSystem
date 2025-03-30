@@ -4,14 +4,12 @@ import { Job, JobStatus } from '../types/Job';
 interface DebugPanelProps {
   jobs: Job[];
   messageCount: number;
-  onReconnect: () => void;
   globalSignalRStarted: { value: boolean };
 }
 
 const DebugPanel: React.FC<DebugPanelProps> = React.memo(({ 
   jobs, 
   messageCount, 
-  onReconnect, 
   globalSignalRStarted 
 }) => {
   const [isVisible, setIsVisible] = useState(false);
@@ -101,12 +99,6 @@ const DebugPanel: React.FC<DebugPanelProps> = React.memo(({
             onClick={() => window.DEBUG_SIGNALR?.triggerTestEvent()}
           >
             Trigger Test Event
-          </button>
-          <button 
-            className="btn btn-sm btn-danger"
-            onClick={onReconnect}
-          >
-            Reconnect
           </button>
         </div>
         

@@ -25,6 +25,7 @@ let reconnectAttempt = 0;
 let connectionLock = false; // Prevent concurrent connection operations
 let startPromise: Promise<void> | null = null;
 let registeredCallbacks: Array<(update: JobProgressUpdate) => void> = [];
+let stateChangeCallbacks: Array<(state: signalR.HubConnectionState) => void> = [];
 
 // Add diagnostic logging to the top of the file
 console.log('SignalR service module loaded');
@@ -35,6 +36,24 @@ const registerCallback = (callback: (update: JobProgressUpdate) => void) => {
     registeredCallbacks.push(callback);
     console.log(`New callback registered. Total callbacks: ${registeredCallbacks.length}`);
   }
+};
+
+// Register for state changes
+const registerStateChange = (callback: (state: signalR.HubConnectionState) => void) => {
+  if (!stateChangeCallbacks.includes(callback)) {
+    stateChangeCallbacks.push(callback);
+  }
+};
+
+// Notify state changes
+const notifyStateChange = (state: signalR.HubConnectionState) => {
+  stateChangeCallbacks.forEach(callback => {
+    try {
+      callback(state);
+    } catch (error) {
+      console.error('Error in state change callback:', error);
+    }
+  });
 };
 
 // Enhance the notifyAllCallbacks function with more logging
@@ -72,6 +91,7 @@ export const startConnection = (onJobUpdate: (update: JobProgressUpdate) => void
   // If already connected, just return resolved promise
   if (connection && connection.state === signalR.HubConnectionState.Connected) {
     console.log('SignalR connection already connected, reusing...');
+    notifyStateChange(signalR.HubConnectionState.Connected);
     return Promise.resolve();
   }
   
@@ -86,6 +106,7 @@ export const startConnection = (onJobUpdate: (update: JobProgressUpdate) => void
   }
 
   connectionLock = true;
+  notifyStateChange(signalR.HubConnectionState.Connecting);
   
   // If we have a connection in a non-connected state, stop it and create a new one
   if (connection) {
@@ -117,23 +138,29 @@ export const startConnection = (onJobUpdate: (update: JobProgressUpdate) => void
         return delay;
       }
     })
-    .configureLogging(signalR.LogLevel.Trace)  // Use Trace for maximum verbosity
+    .configureLogging(signalR.LogLevel.Information)
     .build();
 
   // Set up connection event handlers with more verbose logging
   connection.onreconnecting(error => {
     console.log(`%c🔄 SignalR connection lost. Attempting to reconnect...`, 'background: #FF9800; color: white; padding: 2px 4px; border-radius: 2px;', error);
+    connectionLock = false;
+    notifyStateChange(signalR.HubConnectionState.Reconnecting);
   });
 
   connection.onreconnected(connectionId => {
     console.log(`%c✅ SignalR connection reestablished. ConnectionId: ${connectionId}`, 'background: #4CAF50; color: white; padding: 2px 4px; border-radius: 2px;');
     reconnectAttempt = 0;
+    connectionLock = false;
+    notifyStateChange(signalR.HubConnectionState.Connected);
   });
 
   connection.onclose(error => {
     console.log(`%c❌ SignalR connection closed`, 'background: #F44336; color: white; padding: 2px 4px; border-radius: 2px;', error);
+    connection = null;
     connectionLock = false;
     startPromise = null;
+    notifyStateChange(signalR.HubConnectionState.Disconnected);
   });
 
   // Register the ReceiveJobProgress event handler with enhanced logging
@@ -230,13 +257,23 @@ export const stopConnection = async (): Promise<void> => {
       connection = null;
       reconnectAttempt = 0;
       connectionLock = false;
+      registeredCallbacks = []; // Clear callbacks when connection is stopped
     }
   }
 };
 
 // Add a method to check connection state
 export const getConnectionState = (): signalR.HubConnectionState => {
-  return connection ? connection.state : signalR.HubConnectionState.Disconnected;
+  if (!connection) {
+    return signalR.HubConnectionState.Disconnected;
+  }
+  
+  try {
+    return connection.state;
+  } catch (error) {
+    console.error('Error getting connection state:', error);
+    return signalR.HubConnectionState.Disconnected;
+  }
 };
 
 // Add debugging functions
@@ -338,4 +375,11 @@ export const setupDebugFunctions = () => {
 };
 
 // Call this at the end of the file to set up debug functions
-setupDebugFunctions(); 
+setupDebugFunctions();
+
+export const subscribeToStateChanges = (callback: (state: signalR.HubConnectionState) => void): void => {
+  registerStateChange(callback);
+  // Immediately notify of current state
+  const currentState = getConnectionState();
+  callback(currentState);
+}; 

@@ -15,29 +15,9 @@ import { globalSignalRStarted } from '../contexts/SignalRContext';
 const Header = React.memo(() => {
   console.log('Header component rendering');
   const { isLoading, fetchJobs } = useJobs();
-  const { connectionStatus, messageCount, reconnect } = useSignalR();
+  const { connectionStatus, messageCount } = useSignalR();
   const { addNotification } = useNotifications();
   const [isModalOpen, setIsModalOpen] = useState(false);
-
-  // Create test job function
-  const createTestJob = useCallback(async () => {
-    try {
-      const newJob = {
-        name: `Test Job ${new Date().toLocaleTimeString()}`,
-        priority: JobPriority.High
-      };
-      
-      const createdJob = await createJob(newJob);
-      console.log('Test job created:', createdJob);
-      addNotification(createJobNotification(
-        createdJob.id, 
-        createdJob.name, 
-        createdJob.status
-      ));
-    } catch (error) {
-      console.error('Error creating test job:', error);
-    }
-  }, [addNotification]);
 
   return (
     <div className="row mb-4">
@@ -63,13 +43,6 @@ const Header = React.memo(() => {
               <i className="bi bi-wifi-off me-1"></i> Disconnected
             </span>
           )}
-          <button 
-            className="btn btn-sm btn-light ms-2" 
-            onClick={reconnect}
-            title="Reconnect SignalR"
-          >
-            <i className="bi bi-arrow-repeat"></i>
-          </button>
         </div>
         <button 
           className="btn btn-outline-primary me-2" 
@@ -80,19 +53,11 @@ const Header = React.memo(() => {
           Refresh
         </button>
         <button 
-          className="btn btn-primary me-2" 
+          className="btn btn-primary" 
           onClick={() => setIsModalOpen(true)}
         >
           <i className="bi bi-plus-circle me-1"></i>
           Add New Job
-        </button>
-        <button 
-          className="btn btn-outline-secondary" 
-          onClick={createTestJob}
-          title="Create a test job to verify real-time updates"
-        >
-          <i className="bi bi-lightning me-1"></i>
-          Test Update
         </button>
         
         {/* Modal outside Header component return value but controlled by it*/}
@@ -159,7 +124,6 @@ const LastUpdatedInfo = React.memo(() => {
 const ErrorDisplay = React.memo(() => {
   console.log('Error display rendering');
   const { error } = useJobs();
-  const { reconnect } = useSignalR();
   
   if (!error) return null;
   
@@ -167,12 +131,6 @@ const ErrorDisplay = React.memo(() => {
     <div className="alert alert-danger" role="alert">
       <i className="bi bi-exclamation-triangle-fill me-2"></i>
       {error}
-      <button 
-        className="btn btn-sm btn-outline-danger ms-3"
-        onClick={reconnect}
-      >
-        Reconnect
-      </button>
     </div>
   );
 });
@@ -194,13 +152,12 @@ const NotificationContainer = React.memo(() => {
 const DebugPanelContainer = React.memo(() => {
   console.log('Debug panel container rendering');
   const { jobs } = useJobs();
-  const { messageCount, reconnect } = useSignalR();
+  const { messageCount } = useSignalR();
   
   return (
     <DebugPanel 
       jobs={jobs}
       messageCount={messageCount}
-      onReconnect={reconnect}
       globalSignalRStarted={globalSignalRStarted}
     />
   );
