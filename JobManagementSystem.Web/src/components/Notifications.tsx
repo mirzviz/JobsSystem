@@ -73,4 +73,4 @@ export const createJobNotification = (jobId: string, jobName: string, status: Jo
   };
 };
 
-export default Notifications; 
+export default React.memo(Notifications); 

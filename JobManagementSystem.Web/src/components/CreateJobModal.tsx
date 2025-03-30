@@ -112,4 +112,4 @@ const CreateJobModal: React.FC<CreateJobModalProps> = ({ isOpen, onClose, onJobC
   );
 };
 
-export default CreateJobModal; 
+export default React.memo(CreateJobModal); 

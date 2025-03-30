@@ -55,7 +55,8 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins("http://localhost:5173") // Adjust for your client app
+        policy.WithOrigins("http://localhost:5173", "http://127.0.0.1:5173", 
+                           "http://localhost:5174", "http://127.0.0.1:5174") // Updated for your Vite dev server
               .AllowAnyMethod()
               .AllowAnyHeader()
               .AllowCredentials(); // Required for SignalR

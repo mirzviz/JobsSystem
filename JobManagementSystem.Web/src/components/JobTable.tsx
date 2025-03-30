@@ -8,7 +8,7 @@ interface JobTableProps {
   onJobAction: () => void;
 }
 
-const JobTable: React.FC<JobTableProps> = ({ jobs, onJobAction }) => {
+const JobTable: React.FC<JobTableProps> = React.memo(({ jobs, onJobAction }) => {
   const [searchName, setSearchName] = useState('');
   const [statusFilter, setStatusFilter] = useState<JobStatus | ''>('');
   const [sortField, setSortField] = useState<keyof Job>('createdAt');
@@ -280,6 +280,25 @@ const JobTable: React.FC<JobTableProps> = ({ jobs, onJobAction }) => {
       />
     </>
   );
-};
+}, (prevProps, nextProps) => {
+  if (prevProps.jobs === nextProps.jobs) {
+    return true;
+  }
+  
+  if (prevProps.jobs.length !== nextProps.jobs.length) {
+    return false;
+  }
+  
+  const jobsChanged = nextProps.jobs.some((nextJob, index) => {
+    const prevJob = prevProps.jobs[index];
+    return (
+      prevJob.id !== nextJob.id ||
+      prevJob.status !== nextJob.status ||
+      prevJob.progress !== nextJob.progress
+    );
+  });
+  
+  return !jobsChanged;
+});
 
 export default JobTable; 
