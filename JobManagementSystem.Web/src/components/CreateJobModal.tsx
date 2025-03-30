@@ -85,7 +85,7 @@ const CreateJobModal: React.FC<CreateJobModalProps> = ({ isOpen, onClose, onJobC
                   className="form-select"
                   id="priority"
                   value={priority}
-                  onChange={(e) => setPriority(e.target.value as JobPriority)}
+                  onChange={(e) => setPriority(Number(e.target.value) as JobPriority)}
                 >
                   <option value={JobPriority.Regular}>Regular</option>
                   <option value={JobPriority.High}>High</option>

@@ -1,6 +1,6 @@
 export enum JobPriority {
-  Regular = 'Regular',
-  High = 'High'
+  Regular = 0,
+  High = 1
 }
 
 export enum JobStatus {
