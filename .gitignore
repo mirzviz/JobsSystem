@@ -123,4 +123,34 @@ orleans.codegen.cs
 # SQL Server files
 *.mdf
 *.ldf
-*.ndf 
+*.ndf
+
+# React / Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+dist/
+build/
+coverage/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Local configuration
+appsettings.json
+appsettings.*.json
+!appsettings.json.example
+!appsettings.Development.json.example 
