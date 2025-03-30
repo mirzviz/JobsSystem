@@ -29,16 +29,28 @@ const JobTable: React.FC<JobTableProps> = React.memo(({ jobs, onJobAction }) => 
     try {
       if (action === 'stop') {
         await stopJob(job.id);
+        // Update local state to show Stopped status
+        const updatedJobs = jobs.map(j => 
+          j.id === job.id ? { ...j, status: JobStatus.Stopped } : j
+        );
+        onJobAction(); // This will trigger a state update in the parent
       } else if (action === 'restart') {
         await restartJob(job.id);
+        // Update local state to show Pending status
+        const updatedJobs = jobs.map(j => 
+          j.id === job.id ? { ...j, status: JobStatus.Pending, progress: 0 } : j
+        );
+        onJobAction(); // This will trigger a state update in the parent
       } else if (action === 'delete') {
         if (window.confirm(`Are you sure you want to delete job "${job.name}"?`)) {
           await deleteJob(job.id);
+          // Remove the job from local state
+          const updatedJobs = jobs.filter(j => j.id !== job.id);
+          onJobAction(); // This will trigger a state update in the parent
         } else {
           return;
         }
       }
-      onJobAction();
     } catch (error) {
       console.error(`Failed to ${action} job:`, error);
       alert(`Failed to ${action} job. Please try again.`);

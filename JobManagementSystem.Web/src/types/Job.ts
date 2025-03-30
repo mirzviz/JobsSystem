@@ -12,7 +12,7 @@ export enum JobStatus {
 }
 
 export interface Job {
-  id: string;
+  id: string;  // Always store as string internally
   name: string;
   priority: JobPriority;
   status: JobStatus;

@@ -227,8 +227,21 @@ const JobDashboard: React.FC = React.memo(() => {
   // Fetch jobs on mount - only here to ensure data loads initially
   React.useEffect(() => {
     console.log('JobDashboard mounted - fetching jobs');
-    fetchJobs();
-  }, [fetchJobs]); // Add fetchJobs to dependency array
+    let isSubscribed = true;
+
+    const loadJobs = async () => {
+      if (isSubscribed) {
+        await fetchJobs();
+      }
+    };
+
+    loadJobs();
+
+    // Cleanup function to prevent state updates after unmount
+    return () => {
+      isSubscribed = false;
+    };
+  }, []); // Remove fetchJobs from dependency array since we only want to fetch on mount
   
   return (
     <div className="container-fluid mt-4">

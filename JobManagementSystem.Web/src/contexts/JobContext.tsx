@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useCallback, ReactNode } from 'react';
-import { Job, JobStatus } from '../types/Job';
+import { Job, JobStatus, JobPriority } from '../types/Job';
 import { getJobs } from '../services/jobService';
 import { JobProgressUpdate } from '../services/signalRService';
 import { createJobNotification, Notification } from '../components/Notifications';
@@ -53,18 +53,33 @@ const jobReducer = (state: JobContextState, action: JobAction): JobContextState 
         lastRefreshed: new Date()
       };
     case 'ADD_JOB':
+      // Check if job already exists
+      const existingJob = state.jobs.find(job => job.id === action.payload.id);
+      if (existingJob) {
+        // If job exists, update it instead of adding
+        return {
+          ...state,
+          jobs: state.jobs.map(job =>
+            job.id === action.payload.id ? { ...action.payload } : job
+          )
+        };
+      }
+      // If job doesn't exist, add it
       return {
         ...state,
         jobs: [...state.jobs, action.payload]
       };
     case 'UPDATE_JOB':
+      // Convert jobId to string to ensure consistent comparison
+      const jobIdToUpdate = action.payload.jobId.toString();
+      
       // If job is not found, don't update state
-      if (!state.jobs.some(job => job.id === action.payload.jobId)) {
+      if (!state.jobs.some(job => job.id.toString() === jobIdToUpdate)) {
         return state;
       }
       
       // Check if actual values changed before updating
-      const jobToUpdate = state.jobs.find(job => job.id === action.payload.jobId);
+      const jobToUpdate = state.jobs.find(job => job.id.toString() === jobIdToUpdate);
       if (jobToUpdate && 
           jobToUpdate.progress === action.payload.progress && 
           jobToUpdate.status === action.payload.status) {
@@ -73,16 +88,10 @@ const jobReducer = (state: JobContextState, action: JobAction): JobContextState 
       
       // Create a new jobs array but only if the job actually changes
       const updatedJobs = state.jobs.map(job => 
-        job.id === action.payload.jobId
+        job.id.toString() === jobIdToUpdate
           ? { ...job, progress: action.payload.progress, status: action.payload.status }
           : job
       );
-      
-      // If no actual change occurred (deep equality), return same state reference
-      const hasChanged = JSON.stringify(updatedJobs) !== JSON.stringify(state.jobs);
-      if (!hasChanged) {
-        return state;
-      }
       
       return {
         ...state,
@@ -141,39 +150,46 @@ export const JobProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   }, []);
   
   const updateJobProgress = useCallback((update: JobProgressUpdate): Notification | null => {
+    // Convert jobId to string if it's a number
+    const jobId = typeof update.jobId === 'number' ? update.jobId.toString() : update.jobId;
+    
     // We can't pass a function to dispatch in useReducer, we need to use the current state directly
-    const jobToUpdate = state.jobs.find(job => job.id === update.jobId);
+    const jobToUpdate = state.jobs.find(job => job.id.toString() === jobId.toString());
     
     if (!jobToUpdate) {
-      console.log(`Job ${update.jobId} not found, fetching all jobs...`);
-      fetchJobs();
+      console.log(`Job ${jobId} not found in current state, adding placeholder`);
+      // Add the job to state
+      dispatch({ 
+        type: 'ADD_JOB', 
+        payload: {
+          id: jobId.toString(),  // Ensure ID is string
+          name: `Job ${jobId.toString().substring(0, 8)}`,  // Temporary name
+          status: update.status,
+          progress: update.progress,
+          priority: JobPriority.Regular,  // Default priority
+          createdAt: new Date().toISOString()
+        }
+      });
       return null;
     }
     
-    // Only update if values actually changed
-    if (jobToUpdate.progress !== update.progress || jobToUpdate.status !== update.status) {
-      dispatch({ 
-        type: 'UPDATE_JOB', 
-        payload: {
-          jobId: update.jobId,
-          progress: update.progress,
-          status: update.status
-        }
-      });
-      
-      // Return a notification if the status changed
-      if (jobToUpdate.status !== update.status) {
-        return createJobNotification(jobToUpdate.id, jobToUpdate.name, update.status);
+    // Update existing job
+    dispatch({ 
+      type: 'UPDATE_JOB', 
+      payload: {
+        jobId: jobId.toString(),  // Ensure ID is string
+        progress: update.progress,
+        status: update.status
       }
-    } else {
-      console.log('No changes detected, skipping update');
+    });
+    
+    // Return a notification if the status changed
+    if (jobToUpdate.status !== update.status) {
+      return createJobNotification(jobToUpdate.id, jobToUpdate.name, update.status);
     }
     
     return null;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchJobs]); // Only depend on fetchJobs, not on state.jobs
-  // We're using the ESLint disable comment because we're intentionally accessing state.jobs
-  // inside the callback but excluding it from the dependency array to prevent excessive re-renders
+  }, [state.jobs]); // We need state.jobs to check for existing jobs
   
   // Create context value
   const value: JobContextValue = {

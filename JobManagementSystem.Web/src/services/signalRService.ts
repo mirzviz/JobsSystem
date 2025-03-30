@@ -15,7 +15,7 @@ declare global {
 }
 
 export interface JobProgressUpdate {
-  jobId: string;
+  jobId: string | number;
   progress: number;
   status: JobStatus;
 }
@@ -193,18 +193,6 @@ export const startConnection = (onJobUpdate: (update: JobProgressUpdate) => void
           console.log('SignalR connection started successfully!');
           reconnectAttempt = 0;
           connectionLock = false;
-          
-          // Send a test method call to confirm connection is working
-          if (connection && connection.state === signalR.HubConnectionState.Connected) {
-            try {
-              connection.invoke('JoinGroup', 'JobMonitor')
-                .then(() => console.log('Joined JobMonitor group'))
-                .catch(err => console.error('Error joining group:', err));
-            } catch (error) {
-              console.error('Error invoking JoinGroup:', error);
-            }
-          }
-          
           resolve();
         })
         .catch(err => {
