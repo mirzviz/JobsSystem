@@ -101,8 +101,13 @@ export const startConnection = (onJobUpdate: (update: JobProgressUpdate) => void
   console.log('Building new SignalR connection...');
   
   // Create the connection with explicit transport preferences
+  const apiUrl = import.meta.env.VITE_API_URL;
+  if (!apiUrl) {
+    throw new Error('VITE_API_URL environment variable is not set');
+  }
+  
   connection = new signalR.HubConnectionBuilder()
-    .withUrl('/hubs/jobProgress')
+    .withUrl(`${apiUrl}/hubs/jobProgress`)
     .withAutomaticReconnect({
       nextRetryDelayInMilliseconds: retryContext => {
         reconnectAttempt++;
