@@ -20,7 +20,7 @@ Console.WriteLine("Job Management System - Horizontally Scalable Version");
 Console.WriteLine("This instance processes one job at a time.");
 Console.WriteLine("=======================================================");
 
-// Add PostgreSQL database
+// Add SQL Server database
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
@@ -34,7 +34,7 @@ if (connectionString.Contains("${DB_PASSWORD}"))
 Console.WriteLine($"Using connection string: {connectionString}");
 
 builder.Services.AddDbContext<JobManagementDbContext>(options =>
-    options.UseNpgsql(connectionString));
+    options.UseSqlServer(connectionString));
 
 // Add services to the container
 builder.Services.AddControllers();
@@ -105,7 +105,7 @@ try
         var dbContext = scope.ServiceProvider.GetRequiredService<JobManagementDbContext>();
         
         // For development purposes, drop and recreate the database to ensure schema is correct
-        // This is safe because PostgreSQL handles concurrent access
+        // This is safe because SQL Server handles concurrent access
         Console.WriteLine("Recreating database to ensure schema is correct...");
         await dbContext.Database.EnsureDeletedAsync();
         await dbContext.Database.EnsureCreatedAsync();

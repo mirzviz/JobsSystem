@@ -2,13 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Data;
 using JobManagementSystem.Core.Interfaces;
 using JobManagementSystem.Core.Models;
 using JobManagementSystem.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
-using NpgsqlTypes;
 using Microsoft.Extensions.Logging;
+using Microsoft.Data.SqlClient;
 
 namespace JobManagementSystem.Infrastructure.Services;
 
@@ -162,34 +162,37 @@ public class EfCoreJobQueue : IJobQueue
         {
             // Use raw SQL to avoid race conditions when multiple workers try to claim jobs
             var sql = @"
-                UPDATE ""Jobs"" 
-                SET ""WorkerNodeId"" = :nodeId, ""Status"" = :runningStatus, ""LastClaimTime"" = :now, ""StartedAt"" = :now 
-                WHERE ""Id"" IN (
-                    SELECT ""Id"" 
-                    FROM ""Jobs"" 
-                    WHERE (""WorkerNodeId"" IS NULL OR ""LastClaimTime"" < :staleClaimTime) 
-                      AND ""Status"" = :pendingStatus 
+                UPDATE Jobs 
+                SET WorkerNodeId = @nodeId, 
+                    Status = @runningStatus, 
+                    LastClaimTime = @now, 
+                    StartedAt = @now 
+                OUTPUT INSERTED.*
+                FROM Jobs j
+                INNER JOIN (
+                    SELECT TOP (@limit) Id 
+                    FROM Jobs 
+                    WHERE (WorkerNodeId IS NULL OR LastClaimTime < @staleClaimTime) 
+                      AND Status = @pendingStatus 
                     ORDER BY 
-                      CASE WHEN ""Priority"" = 1 THEN 0 ELSE 1 END, -- High priority first
-                      ""CreatedAt"" ASC
-                    LIMIT :limit
-                )
-                RETURNING *
+                      CASE WHEN Priority = 1 THEN 0 ELSE 1 END, -- High priority first
+                      CreatedAt ASC
+                ) AS subquery ON j.Id = subquery.Id
             ";
 
             // Handle stale claims (jobs claimed by workers that died)
             var staleClaimTime = DateTime.UtcNow.AddMinutes(-2);
             var now = DateTime.UtcNow;
 
-            // Create parameters with explicit types
+            // Create parameters for SQL Server with explicit types
             var parameters = new[]
             {
-                new NpgsqlParameter { ParameterName = "nodeId", Value = currentNodeId, NpgsqlDbType = NpgsqlDbType.Uuid },
-                new NpgsqlParameter { ParameterName = "runningStatus", Value = (int)JobStatus.Running, NpgsqlDbType = NpgsqlDbType.Integer },
-                new NpgsqlParameter { ParameterName = "now", Value = now, NpgsqlDbType = NpgsqlDbType.TimestampTz },
-                new NpgsqlParameter { ParameterName = "staleClaimTime", Value = staleClaimTime, NpgsqlDbType = NpgsqlDbType.TimestampTz },
-                new NpgsqlParameter { ParameterName = "pendingStatus", Value = (int)JobStatus.Pending, NpgsqlDbType = NpgsqlDbType.Integer },
-                new NpgsqlParameter { ParameterName = "limit", Value = maxJobs, NpgsqlDbType = NpgsqlDbType.Integer }
+                new SqlParameter("@nodeId", SqlDbType.UniqueIdentifier) { Value = currentNodeId },
+                new SqlParameter("@runningStatus", SqlDbType.Int) { Value = (int)JobStatus.Running },
+                new SqlParameter("@now", SqlDbType.DateTime2) { Value = now },
+                new SqlParameter("@staleClaimTime", SqlDbType.DateTime2) { Value = staleClaimTime },
+                new SqlParameter("@pendingStatus", SqlDbType.Int) { Value = (int)JobStatus.Pending },
+                new SqlParameter("@limit", SqlDbType.Int) { Value = maxJobs }
             };
 
             // Execute raw SQL and get the claimed jobs
