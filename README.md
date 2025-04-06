@@ -45,14 +45,23 @@ dotnet run --project JobManagementSystem.Api --urls http://localhost:5001
 cd JobManagementSystem.Web
 ```
 
-2. Install dependencies:
+2. Set up environment variables:
+   - Create a `.env` file in the `JobManagementSystem.Web` directory
+   - Add the following configuration:
+   ```
+   VITE_API_URL=http://localhost:5000
+   VITE_ENABLE_SIGNALR_LOGS=true
+   ```
+   Note: The `VITE_API_URL` should point to your backend API URL. If your backend is running on a different port or host, adjust the URL accordingly.
+
+3. Install dependencies:
 ```bash
 npm install
 # or
 yarn install
 ```
 
-3. Start the development server:
+4. Start the development server:
 ```bash
 npm run dev
 # or

@@ -15,6 +15,19 @@ A React + TypeScript frontend for the Job Management System.
 - Node.js (version 16 or later)
 - Backend API running at `http://localhost:5000`
 
+## Environment Setup
+
+Before running the application, you need to set up the environment variables:
+
+1. Create a `.env` file in the root directory of the project
+2. Add the following configuration:
+```
+VITE_API_URL=http://localhost:5000
+VITE_ENABLE_SIGNALR_LOGS=true
+```
+
+Note: The `VITE_API_URL` should point to your backend API URL. If your backend is running on a different port or host, adjust the URL accordingly.
+
 ## Setup and Running
 
 1. Install dependencies:
@@ -45,4 +58,4 @@ npm run preview
 
 ## Backend Connection
 
-The application is configured to connect to the backend API at `http://localhost:5000`. If your backend is running on a different URL, update the proxy configuration in `vite.config.ts`. 
+The application is configured to connect to the backend API at `http://localhost:5000`. If your backend is running on a different URL, update the proxy configuration in `vite.config.ts`.
